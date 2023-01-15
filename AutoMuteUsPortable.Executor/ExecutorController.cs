@@ -16,7 +16,6 @@ namespace AutoMuteUsPortable.Executor;
 public class ExecutorController : ExecutorControllerBase
 {
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
-    public new readonly ExecutorConfiguration ExecutorConfiguration;
     private Process? _process;
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
