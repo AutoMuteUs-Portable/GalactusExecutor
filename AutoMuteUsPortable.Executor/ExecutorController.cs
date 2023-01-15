@@ -15,9 +15,6 @@ namespace AutoMuteUsPortable.Executor;
 
 public class ExecutorController : ExecutorControllerBase
 {
-    public new static Dictionary<string, Parameter> InstallParameters = new();
-    public new static Dictionary<string, Parameter> UpdateParameters = new();
-
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
     public new readonly ExecutorConfiguration ExecutorConfiguration;
     private Process? _process;
@@ -303,7 +300,7 @@ public class ExecutorController : ExecutorControllerBase
         #endregion
     }
 
-    public override async Task Install(Dictionary<string, string> parameters,
+    public override async Task Install(
         Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null)
     {
         #region Retrieve data from PocketBase
@@ -360,25 +357,11 @@ public class ExecutorController : ExecutorControllerBase
         #endregion
     }
 
-    public override Task Update(Dictionary<string, string> parameters,
+    public override Task Update(
         Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null)
     {
         progress?.OnCompleted();
         return Task.CompletedTask;
-    }
-
-    public override async Task InstallBySimpleSettings(object simpleSettings, object executorConfigurationBase,
-        Dictionary<ExecutorType, ExecutorControllerBase> executors,
-        ISubject<ProgressInfo>? progress = null)
-    {
-        await Install(new Dictionary<string, string>(), executors, progress);
-    }
-
-    public override async Task UpdateBySimpleSettings(object simpleSettings, object executorConfigurationBase,
-        Dictionary<ExecutorType, ExecutorControllerBase> executors,
-        ISubject<ProgressInfo>? progress = null)
-    {
-        await Update(new Dictionary<string, string>(), executors, progress);
     }
 
     private Task ExtractZip(string path, IProgress<double>? progress = null)
