@@ -298,6 +298,8 @@ public class ExecutorController : ExecutorControllerBase
 
     public override async Task Restart(ISubject<ProgressInfo>? progress = null)
     {
+        if (!IsRunning) return;
+
         #region Setup progress
 
         var taskProgress = progress != null
