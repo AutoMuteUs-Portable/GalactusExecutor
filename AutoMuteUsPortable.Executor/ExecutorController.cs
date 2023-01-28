@@ -130,6 +130,32 @@ public class ExecutorController : ExecutorControllerBase
     {
         if (IsRunning) return;
 
+        #region Setup progress
+
+        var taskProgress = progress != null
+            ? new TaskProgress(progress, new Dictionary<string, object?>
+            {
+                {
+                    "File integrity check", new List<string>
+                    {
+                        "Checking file integrity",
+                        "Downloading",
+                        "Extracting"
+                    }
+                },
+                {
+                    "Killing currently running server",
+                    null
+                },
+                {
+                    "Starting server",
+                    null
+                }
+            })
+            : null;
+
+        #endregion
+
         #region Retrieve data from PocketBase
 
         var galactus =
@@ -147,16 +173,19 @@ public class ExecutorController : ExecutorControllerBase
 
         #region Check file integrity
 
-        progress?.OnNext(new ProgressInfo
-        {
-            name = $"Checking file integrity of {ExecutorConfiguration.type.ToString()}"
-        });
         using (var client = new HttpClient())
         {
             var checksumUrl = Utils.GetChecksum(galactus.Checksum);
             var res = await client.GetStringAsync(checksumUrl);
             var checksum = Utils.ParseChecksumText(res);
+            var checksumProgress = taskProgress?.GetSubjectProgress();
+            checksumProgress?.OnNext(new ProgressInfo
+            {
+                name = string.Format("{0}のファイルの整合性を確認しています", ExecutorConfiguration.type),
+                IsIndeterminate = true
+            });
             var invalidFiles = Utils.CompareChecksum(ExecutorConfiguration.binaryDirectory, checksum);
+            taskProgress?.NextTask();
 
             if (0 < invalidFiles.Count)
             {
@@ -167,27 +196,21 @@ public class ExecutorController : ExecutorControllerBase
                 var binaryPath = Path.Combine(ExecutorConfiguration.binaryDirectory,
                     Path.GetFileName(downloadUrl));
 
-                var downloadProgress = new Progress<double>();
-                downloadProgress.ProgressChanged += (_, value) =>
-                {
-                    progress?.OnNext(new ProgressInfo
-                    {
-                        name = $"Downloading {ExecutorConfiguration.type.ToString()} {galactus.Version}",
-                        progress = value / 2.0
-                    });
-                };
+                var downloadProgress = taskProgress?.GetProgress();
+                if (taskProgress?.ActiveLeafTask != null)
+                    taskProgress.ActiveLeafTask.Name = string.Format("{0}をダウンロードしています", Path.GetFileName(downloadUrl));
                 await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress);
+                taskProgress?.NextTask();
 
-                var extractProgress = new Progress<double>();
-                extractProgress.ProgressChanged += (_, value) =>
-                {
-                    progress?.OnNext(new ProgressInfo
-                    {
-                        name = $"Extracting {Path.GetFileName(downloadUrl)}",
-                        progress = 0.5 + value / 2.0
-                    });
-                };
+                var extractProgress = taskProgress?.GetProgress();
+                if (taskProgress?.ActiveLeafTask != null)
+                    taskProgress.ActiveLeafTask.Name = string.Format("{0}を解凍しています", Path.GetFileName(downloadUrl));
                 Utils.ExtractZip(binaryPath, extractProgress);
+                taskProgress?.NextTask();
+            }
+            else
+            {
+                taskProgress?.NextTask(2);
             }
         }
 
@@ -197,9 +220,11 @@ public class ExecutorController : ExecutorControllerBase
 
         var fileName = Path.Combine(ExecutorConfiguration.binaryDirectory, "galactus.exe");
 
-        progress?.OnNext(new ProgressInfo
+        var killingProgress = taskProgress?.GetSubjectProgress();
+        killingProgress?.OnNext(new ProgressInfo
         {
-            name = $"Checking currently running {ExecutorConfiguration.type.ToString()}"
+            name = string.Format("既に起動している{0}を終了しています", ExecutorConfiguration.type),
+            IsIndeterminate = true
         });
         var wmiQueryString =
             $"SELECT ProcessId FROM Win32_Process WHERE ExecutablePath = '{fileName.Replace(@"\", @"\\")}'";
@@ -220,6 +245,8 @@ public class ExecutorController : ExecutorControllerBase
                 }
         }
 
+        taskProgress?.NextTask();
+
         #endregion
 
         #region Start server
@@ -239,13 +266,14 @@ public class ExecutorController : ExecutorControllerBase
 
         _process.Exited += (_, _) => { OnStop(); };
 
-        progress?.OnNext(new ProgressInfo
+        var startProgress = taskProgress?.GetSubjectProgress();
+        startProgress?.OnNext(new ProgressInfo
         {
-            name =
-                $"Starting {ExecutorConfiguration.type.ToString()} at port {ExecutorConfiguration.environmentVariables["GALACTUS_PORT"]}"
+            name = string.Format("{0}を起動しています", ExecutorConfiguration.type),
+            IsIndeterminate = true
         });
         _process.Start();
-        progress?.OnCompleted();
+        taskProgress?.NextTask();
 
         #endregion
     }
@@ -258,11 +286,11 @@ public class ExecutorController : ExecutorControllerBase
 
         progress?.OnNext(new ProgressInfo
         {
-            name = $"Stopping {ExecutorConfiguration.type.ToString()}"
+            name = string.Format("{0}を終了しています", ExecutorConfiguration.type),
+            IsIndeterminate = true
         });
         _process?.Kill();
         _process?.WaitForExit();
-        progress?.OnCompleted();
         return Task.CompletedTask;
 
         #endregion
@@ -270,30 +298,31 @@ public class ExecutorController : ExecutorControllerBase
 
     public override async Task Restart(ISubject<ProgressInfo>? progress = null)
     {
+        #region Setup progress
+
+        var taskProgress = progress != null
+            ? new TaskProgress(progress, new List<string>
+            {
+                "Stopping",
+                "Starting"
+            })
+            : null;
+
+        #endregion
+
         #region Stop server
 
-        var stopProgress = new Subject<ProgressInfo>();
-        stopProgress.Subscribe(x => progress?.OnNext(new ProgressInfo
-        {
-            name = x.name,
-            progress = x.progress / 2.0
-        }));
-        await Stop();
-        stopProgress.Dispose();
+        var stopProgress = taskProgress?.GetSubjectProgress();
+        await Stop(stopProgress);
+        taskProgress?.NextTask();
 
         #endregion
 
         #region Start server
 
-        var runProgress = new Subject<ProgressInfo>();
-        runProgress.Subscribe(x => progress?.OnNext(new ProgressInfo
-        {
-            name = x.name,
-            progress = 0.5 + x.progress / 2.0
-        }));
-        await Run();
-        runProgress.Dispose();
-        progress?.OnCompleted();
+        var runProgress = taskProgress?.GetSubjectProgress();
+        await Run(runProgress);
+        taskProgress?.NextTask();
 
         #endregion
     }
@@ -301,6 +330,18 @@ public class ExecutorController : ExecutorControllerBase
     public override async Task Install(
         Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null)
     {
+        #region Setup progress
+
+        var taskProgress = progress != null
+            ? new TaskProgress(progress, new Dictionary<string, object?>
+            {
+                { "Downloading", null },
+                { "Extracting", null }
+            })
+            : null;
+
+        #endregion
+
         #region Retrieve data from PocketBase
 
         var galactus =
@@ -326,31 +367,21 @@ public class ExecutorController : ExecutorControllerBase
         var binaryPath = Path.Combine(ExecutorConfiguration.binaryDirectory,
             Path.GetFileName(downloadUrl));
 
-        var downloadProgress = new Progress<double>();
-        downloadProgress.ProgressChanged += (_, value) =>
-        {
-            progress?.OnNext(new ProgressInfo
-            {
-                name = $"Downloading {ExecutorConfiguration.type.ToString()} {galactus.Version}",
-                progress = value / 2.0
-            });
-        };
+        var downloadProgress = taskProgress?.GetProgress();
+        if (taskProgress?.ActiveLeafTask != null)
+            taskProgress.ActiveLeafTask.Name = string.Format("{0}をダウンロードしています", Path.GetFileName(downloadUrl));
         await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress);
+        taskProgress?.NextTask();
 
         #endregion
 
         #region Extract
 
-        var extractProgress = new Progress<double>();
-        extractProgress.ProgressChanged += (_, value) =>
-        {
-            progress?.OnNext(new ProgressInfo
-            {
-                name = $"Extracting {Path.GetFileName(downloadUrl)}",
-                progress = 0.5 + value / 2.0
-            });
-        };
+        var extractProgress = taskProgress?.GetProgress();
+        if (taskProgress?.ActiveLeafTask != null)
+            taskProgress.ActiveLeafTask.Name = string.Format("{0}を解凍しています", Path.GetFileName(downloadUrl));
         Utils.ExtractZip(binaryPath, extractProgress);
+        taskProgress?.NextTask();
 
         #endregion
     }
@@ -359,7 +390,6 @@ public class ExecutorController : ExecutorControllerBase
         Dictionary<ExecutorType, ExecutorControllerBase> executors, object oldExecutorConfiguration,
         ISubject<ProgressInfo>? progress = null)
     {
-        progress?.OnCompleted();
         return Task.CompletedTask;
     }
 }
