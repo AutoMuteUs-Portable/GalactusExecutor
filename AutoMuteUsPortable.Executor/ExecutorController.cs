@@ -163,11 +163,11 @@ public class ExecutorController : ExecutorControllerBase
                 x.Version == ExecutorConfiguration.binaryVersion);
         if (galactus == null)
             throw new InvalidDataException(
-                $"{ExecutorConfiguration.type.ToString()} {ExecutorConfiguration.binaryVersion} is not found in the database");
+                $"{ExecutorConfiguration.type} {ExecutorConfiguration.binaryVersion} is not found in the database");
         // TODO: This doesn't work due to a bug of PocketBaseClient-csharp
         // if (galactus.CompatibleExecutors.All(x => x.Version != _executorConfiguration.version))
         //     throw new InvalidDataException(
-        //         $"{_executorConfiguration.type.ToString()} {_executorConfiguration.binaryVersion} is not compatible with Executor {_executorConfiguration.version}");
+        //         $"{_executorConfiguration.type} {_executorConfiguration.binaryVersion} is not compatible with Executor {_executorConfiguration.version}");
 
         #endregion
 
@@ -351,10 +351,10 @@ public class ExecutorController : ExecutorControllerBase
                 x.Version == ExecutorConfiguration.binaryVersion);
         if (galactus == null)
             throw new InvalidDataException(
-                $"{ExecutorConfiguration.type.ToString()} {ExecutorConfiguration.binaryVersion} is not found in the database");
+                $"{ExecutorConfiguration.type} {ExecutorConfiguration.binaryVersion} is not found in the database");
         if (galactus.CompatibleExecutors.All(x => x.Version != ExecutorConfiguration.version))
             throw new InvalidDataException(
-                $"{ExecutorConfiguration.type.ToString()} {ExecutorConfiguration.binaryVersion} is not compatible with Executor {ExecutorConfiguration.version}");
+                $"{ExecutorConfiguration.type} {ExecutorConfiguration.binaryVersion} is not compatible with Executor {ExecutorConfiguration.version}");
         var downloadUrl = Utils.GetDownloadUrl(galactus.DownloadUrl);
         if (string.IsNullOrEmpty(downloadUrl))
             throw new InvalidDataException("DownloadUrl cannot be null or empty");
