@@ -337,10 +337,10 @@ public class ExecutorController : ExecutorControllerBase
         #region Setup progress
 
         var taskProgress = progress != null
-            ? new TaskProgress(progress, new Dictionary<string, object?>
+            ? new TaskProgress(progress, new List<string>
             {
-                { "Downloading", null },
-                { "Extracting", null }
+                "Downloading",
+                "Extracting"
             })
             : null;
 
