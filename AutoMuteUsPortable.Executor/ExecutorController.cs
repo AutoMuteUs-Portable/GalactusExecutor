@@ -124,8 +124,6 @@ public class ExecutorController : ExecutorControllerBase
         #endregion
     }
 
-    public new bool IsRunning => !_process?.HasExited ?? false;
-
     public override async Task Run(ISubject<ProgressInfo>? progress = null)
     {
         if (IsRunning) return;
@@ -266,6 +264,7 @@ public class ExecutorController : ExecutorControllerBase
         foreach (var (key, value) in ExecutorConfiguration.environmentVariables)
             _process.StartInfo.EnvironmentVariables.Add(key, value);
 
+        IsRunning = true;
         _process.Exited += (_, _) => { OnStop(); };
 
         var startProgress = taskProgress?.GetSubjectProgress();
@@ -395,5 +394,11 @@ public class ExecutorController : ExecutorControllerBase
         ISubject<ProgressInfo>? progress = null)
     {
         return Task.CompletedTask;
+    }
+
+    protected override void OnStop()
+    {
+        base.OnStop();
+        IsRunning = false;
     }
 }
