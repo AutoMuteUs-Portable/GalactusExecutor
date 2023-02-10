@@ -282,7 +282,7 @@ public class ExecutorController : ExecutorControllerBase
         foreach (var (key, value) in ExecutorConfiguration.environmentVariables)
             _process.StartInfo.EnvironmentVariables.Add(key, value);
 
-        IsRunning = true;
+        OnStart();
         _process.Exited += (_, _) => { OnStop(); };
 
         var startProgress = taskProgress?.GetSubjectProgress();
@@ -419,12 +419,6 @@ public class ExecutorController : ExecutorControllerBase
         ISubject<ProgressInfo>? progress = null)
     {
         return Task.CompletedTask;
-    }
-
-    protected override void OnStop()
-    {
-        base.OnStop();
-        IsRunning = false;
     }
 
     private void ProcessOnOutputDataReceived(object sender, DataReceivedEventArgs e)
