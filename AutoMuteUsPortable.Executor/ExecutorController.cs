@@ -7,6 +7,8 @@ using AutoMuteUsPortable.Shared.Entity.ExecutorConfigurationBaseNS;
 using AutoMuteUsPortable.Shared.Entity.ExecutorConfigurationNS;
 using AutoMuteUsPortable.Shared.Entity.ProgressInfo;
 using AutoMuteUsPortable.Shared.Utility;
+using CliWrap;
+using CliWrap.EventStream;
 using FluentValidation;
 
 namespace AutoMuteUsPortable.Executor;
@@ -17,6 +19,8 @@ public class ExecutorController : ExecutorControllerBase
     private Process? _process;
     private readonly StreamWriter _outputStreamWriter;
     private readonly StreamWriter _errorStreamWriter;
+    private CancellationTokenSource _forcefulCTS = new();
+    private CancellationTokenSource _gracefulCTS = new();
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
     {
@@ -272,37 +276,46 @@ public class ExecutorController : ExecutorControllerBase
 
         #region Start server
 
-        _process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"galactus.exe"),
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                WorkingDirectory = ExecutorConfiguration.binaryDirectory
-            }
-        };
-        _process.OutputDataReceived += ProcessOnOutputDataReceived;
-        _process.ErrorDataReceived += ProcessOnErrorDataReceived;
-        _process.Exited += (_, _) => { OnStop(); };
-        _process.EnableRaisingEvents = true;
-
-        foreach (var (key, value) in ExecutorConfiguration.environmentVariables)
-            _process.StartInfo.EnvironmentVariables.Add(key, value);
-
         var startProgress = taskProgress?.GetSubjectProgress();
         startProgress?.OnNext(new ProgressInfo
         {
             name = string.Format("{0}を起動しています", ExecutorConfiguration.type),
             IsIndeterminate = true
         });
-        OnStart();
-        _process.Start();
+        var cmd = Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"galactus.exe"))
+            .WithEnvironmentVariables(ExecutorConfiguration.environmentVariables!)
+            .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
+            .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
+            .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError));
 
-        _process.BeginOutputReadLine();
-        _process.BeginErrorReadLine();
+        _forcefulCTS = new CancellationTokenSource();
+        _gracefulCTS = new CancellationTokenSource();
+        try
+        {
+            cmd.Observe(Console.OutputEncoding, Console.OutputEncoding, _forcefulCTS.Token, _gracefulCTS.Token)
+                .Subscribe(
+                    e =>
+                    {
+                        switch (e)
+                        {
+                            case StartedCommandEvent started:
+                                OnStart();
+                                break;
+                            case ExitedCommandEvent exited:
+                                OnStop();
+                                break;
+                        }
+                    }, _ => OnStop(), OnStop);
+        }
+        catch (OperationCanceledException ex)
+        {
+            // ignored
+        }
+        catch
+        {
+            // ignored
+            // TODO: handle exception more elegantly
+        }
 
         taskProgress?.NextTask();
 
@@ -320,8 +333,7 @@ public class ExecutorController : ExecutorControllerBase
             name = string.Format("{0}を終了しています", ExecutorConfiguration.type),
             IsIndeterminate = true
         });
-        _process?.Kill();
-        _process?.WaitForExit();
+        _gracefulCTS.Cancel();
         return Task.CompletedTask;
 
         #endregion
@@ -426,13 +438,13 @@ public class ExecutorController : ExecutorControllerBase
         return Task.CompletedTask;
     }
 
-    private void ProcessOnOutputDataReceived(object sender, DataReceivedEventArgs e)
+    private void ProcessStandardOutput(string text)
     {
-        _outputStreamWriter.Write(e.Data);
+        _outputStreamWriter.Write(text);
     }
 
-    private void ProcessOnErrorDataReceived(object sender, DataReceivedEventArgs e)
+    private void ProcessStandardError(string text)
     {
-        _errorStreamWriter.Write(e.Data);
+        _errorStreamWriter.Write(text);
     }
 }
