@@ -16,21 +16,11 @@ namespace AutoMuteUsPortable.Executor;
 public class ExecutorController : ExecutorControllerBase
 {
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
-    private Process? _process;
-    private readonly StreamWriter _outputStreamWriter;
-    private readonly StreamWriter _errorStreamWriter;
     private CancellationTokenSource _forcefulCTS = new();
     private CancellationTokenSource _gracefulCTS = new();
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
     {
-        #region Initialize stream writer
-
-        _outputStreamWriter = new StreamWriter(OutputStream);
-        _errorStreamWriter = new StreamWriter(ErrorStream);
-
-        #endregion
-
         #region Check variables
 
         var binaryDirectory = Utils.PropertyByName<string>(executorConfiguration, "binaryDirectory");
@@ -75,13 +65,6 @@ public class ExecutorController : ExecutorControllerBase
     public ExecutorController(object computedSimpleSettings,
         object executorConfigurationBase) : base(computedSimpleSettings, executorConfigurationBase)
     {
-        #region Initialize stream writer
-
-        _outputStreamWriter = new StreamWriter(OutputStream);
-        _errorStreamWriter = new StreamWriter(ErrorStream);
-
-        #endregion
-
         #region Check variables
 
         var binaryDirectory = Utils.PropertyByName<string>(executorConfigurationBase, "binaryDirectory");
@@ -440,11 +423,11 @@ public class ExecutorController : ExecutorControllerBase
 
     private void ProcessStandardOutput(string text)
     {
-        _outputStreamWriter.Write(text);
+        StandardOutput.OnNext(text);
     }
 
     private void ProcessStandardError(string text)
     {
-        _errorStreamWriter.Write(text);
+        StandardError.OnNext(text);
     }
 }
